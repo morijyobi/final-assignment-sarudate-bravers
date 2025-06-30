@@ -94,6 +94,18 @@ while running:
                 input_text = input_text[:-1]
             else:
                 input_text += event.unicode
+                
+        elif state == "username" and event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_RETURN:
+                print(f"ユーザー名: {username}")  # 必要に応じて次の状態へ
+                # state = "next_state"  # ←次の状態があるなら遷移
+            elif event.key == pygame.K_BACKSPACE:
+                username = username[:-1]
+            elif event.key == pygame.K_ESCAPE:
+                state = "title"
+                username = ""
+            else:
+                username += event.unicode
 
     # 状態別 描画
     if state == "title":
@@ -131,8 +143,35 @@ while running:
         screen.blit(text, (screen_width // 2 - text.get_width() // 2, screen_height // 2))
 
     elif state == "username":
-        text = font_common.render("接続完了！ユーザー名入力画面（仮）", True, (0, 255, 0))
-        screen.blit(text, (screen_width // 2 - text.get_width() // 2, screen_height // 2))
+        # 案内メッセージ
+        prompt = "ユーザー情報登録"
+        prompt_surf = font_common.render(prompt, True, (255, 255, 255))
+        screen.blit(prompt_surf, (
+            screen_width // 2 - prompt_surf.get_width() // 2,
+            screen_height // 2 - 100  # ← 前より上に移動
+        ))
+
+        # 入力ボックスのサイズと位置（大きくする）
+        box_width = 400
+        box_height = 50
+        box_x = screen_width // 2 - box_width // 2 + 100  # ←少し右に寄せてラベルの分を確保
+        box_y = screen_height // 2 - 20
+
+        # 入力ボックスの枠線
+        pygame.draw.rect(screen, (255, 255, 255), (box_x, box_y, box_width, box_height), 2)
+
+        # ユーザーネームラベル
+        label_text = "ユーザーネーム："
+        label_surf = font_common.render(label_text, True, (255, 255, 255))
+        label_x = box_x - label_surf.get_width() - 10  
+        label_y = box_y + (box_height // 2 - label_surf.get_height() // 2)
+        screen.blit(label_surf, (label_x, label_y))
+
+        # 入力された名前
+        name_surf = font_common.render(username, True, (0, 255, 0))
+        name_x = box_x + 10  # ←ボックス内の左端から少し余白
+        name_y = box_y + (box_height // 2 - name_surf.get_height() // 2)
+        screen.blit(name_surf, (name_x, name_y))
 
     pygame.display.flip()
 
