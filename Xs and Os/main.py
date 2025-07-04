@@ -22,14 +22,30 @@ WHITE = (255, 255, 255)
 YELLOW = (255, 255, 0)
 GRAY = (100, 100, 100)
 DARK_GRAY = (60, 60, 60)
+SOFT_WHITE_BLUE = (210, 230, 255)
+DEEP_BLUE_GRAY = (40, 60, 90)
 
 network = Network()
 
-state = "title"
+state = "title"  # title, room_menu, ip_display, ip_input, waiting, username, select_difficulty, rule_selection, waiting_for_host_rule
 role = None
 ip_address = ""
 input_text = ""
 username = ""
+difficulty = None
+
+difficulty_buttons = {
+    "3x3": pygame.Rect(screen_width // 2 - 270, screen_height // 2 - 50, 150, 60),
+    "5x5": pygame.Rect(screen_width // 2 - 75, screen_height // 2 - 50, 150, 60),
+    "3x3x3": pygame.Rect(screen_width // 2 + 120, screen_height // 2 - 50, 150, 60),
+}
+ready_button = pygame.Rect(screen_width // 2 - 100, screen_height // 2 + 130, 200, 60)
+
+difficulty_descriptions = {
+    "3x3": "シンプルな9マス、初心者向け！",
+    "5x5": "25マスの中量級、戦略的な展開！",
+    "3x3x3": "立体3次元、上級者向けモード！"
+}
 
 cursor_pos = 0
 backspace_pressed = False
@@ -76,11 +92,16 @@ def start_server_thread():
     print("[DEBUG] サーバー起動完了（接続待機中）")
     server_ready = True
 
-def connect_client_thread(ip):
+def connect_to_server(ip):
     global client_ready
+    ip = ip.strip()  # 余計な空白を除去
+    print(f"[DEBUG] クライアント接続先IP: {ip}")
     network.connect_to_server(ip)
     if network.connected:
         client_ready = True
+
+def connect_client_thread(ip):
+    connect_to_server(ip)
 
 def draw_ip_input_field(screen, input_text, cursor_pos):
     screen.blit(font_common.render("アドレス:", True, WHITE), (screen_width // 2 - 200, input_y))
@@ -105,20 +126,25 @@ while running:
             running = False
 
         elif event.type == pygame.MOUSEBUTTONDOWN:
-            if state != "title" and back_button_rect.collidepoint(event.pos):
-                # タイトル以外で戻る
+            # 戻るボタン処理
+            if back_button_rect.collidepoint(event.pos) and state != "title":
+                # 状態により戻る先を変更
                 if state == "room_menu":
                     state = "title"
-                else:
+                elif state in ["ip_display", "ip_input", "waiting", "username", "select_difficulty", "rule_selection", "waiting_for_host_rule"]:
                     state = "room_menu"
                 server_ready = False
                 client_ready = False
                 server_button_pressed = False
                 input_text = ""
                 cursor_pos = 0
+                username = ""
+                difficulty = None
 
-            if state == "title" and start_button_rect.collidepoint(event.pos):
-                state = "room_menu"
+            # 各画面でのボタン処理
+            if state == "title":
+                if start_button_rect.collidepoint(event.pos):
+                    state = "room_menu"
 
             elif state == "room_menu":
                 if room_create_button.collidepoint(event.pos):
@@ -131,19 +157,29 @@ while running:
                     cursor_pos = 0
                     state = "ip_input"
 
+            elif state == "select_difficulty":
+                for key, rect in difficulty_buttons.items():
+                    if rect.collidepoint(event.pos):
+                        difficulty = key
+                if ready_button.collidepoint(event.pos) and difficulty:
+                    print(f"[DEBUG] 難易度選択完了: {difficulty}")
+                    # 難易度決定後の処理（例：ゲーム開始やルール画面へ遷移）
+                    # state = "rule_selection"  # 必要に応じて変更
+
             elif state == "ip_display" and role == "server":
                 if ready_button_rect.collidepoint(event.pos) and not server_ready and not server_button_pressed:
-                    print("準備OKボタンが押されました")
+                    print("[DEBUG] サーバー準備OKボタン押下")
                     server_button_pressed = True
                     server_thread = threading.Thread(target=start_server_thread, daemon=True)
                     server_thread.start()
 
             elif state == "ip_input":
                 if connect_button_rect.collidepoint(event.pos):
-                    trimmed_ip = input_text.strip() 
-                    state = "waiting"
-                    client_thread = threading.Thread(target=connect_client_thread, args=(trimmed_ip,), daemon=True)
-                    client_thread.start()
+                    trimmed_ip = input_text.strip()
+                    if trimmed_ip:
+                        state = "waiting"
+                        client_thread = threading.Thread(target=connect_client_thread, args=(trimmed_ip,), daemon=True)
+                        client_thread.start()
                 else:
                     mx, my = event.pos
                     if input_y <= my <= input_y + font_common.get_height():
@@ -162,15 +198,44 @@ while running:
                 elif event.key == pygame.K_RIGHT and cursor_pos < len(input_text):
                     cursor_pos += 1
                 elif event.key == pygame.K_RETURN:
-                    # Enterキーで接続を実装するならここに追加
-                    pass
+                    trimmed_ip = input_text.strip()
+                    if trimmed_ip:
+                        state = "waiting"
+                        client_thread = threading.Thread(target=connect_client_thread, args=(trimmed_ip,), daemon=True)
+                        client_thread.start()
                 elif event.unicode.isprintable() and len(input_text) < 15:
                     input_text = input_text[:cursor_pos] + event.unicode + input_text[cursor_pos:]
                     cursor_pos += 1
 
+            elif event.type == pygame.KEYUP and event.key == pygame.K_BACKSPACE:
+                backspace_pressed = False
+
+            elif state == "username":
+                if event.key == pygame.K_RETURN:
+                    if len(username.strip()) > 0:
+                        print(f"[DEBUG] ユーザー名設定: {username}")
+                        if role == "server":
+                            state = "select_difficulty"
+                        else:
+                            state = "waiting_for_host_rule"
+                elif event.key == pygame.K_BACKSPACE:
+                    if len(username) > 0:
+                        username = username[:-1]
+                elif event.key == pygame.K_ESCAPE:
+                    state = "title"
+                    username = ""
+                elif event.unicode.isprintable():
+                    if len(username) < 12:
+                        username += event.unicode
+
+            elif state == "rule_selection":
+                if event.key == pygame.K_ESCAPE:
+                    state = "username"
+
         elif event.type == pygame.KEYUP and event.key == pygame.K_BACKSPACE:
             backspace_pressed = False
 
+    # バックスペース長押し処理（IP入力画面）
     if state == "ip_input" and backspace_pressed:
         if now - backspace_timer > 300:
             if cursor_pos > 0:
@@ -178,7 +243,7 @@ while running:
                 cursor_pos -= 1
             backspace_timer = now - 200
 
-    # サーバー準備完了は network.server_waiting を参照
+    # ネットワーク接続状態によるステート遷移
     if role == "server" and state == "ip_display" and getattr(network, "server_waiting", False):
         server_ready = True
 
@@ -187,10 +252,10 @@ while running:
 
     if state in ["ip_display", "waiting", "ip_input"]:
         if role == "server" and server_ready:
-            print("[DEBUG] サーバー接続完了 → ユーザー名画面へ")
+            print("[DEBUG] サーバー接続完了 → ユーザー名入力画面へ")
             state = "username"
         elif role == "client" and client_ready:
-            print("[DEBUG] クライアント接続完了 → ユーザー名画面へ")
+            print("[DEBUG] クライアント接続完了 → ユーザー名入力画面へ")
             state = "username"
 
     # 画面描画
@@ -244,10 +309,70 @@ while running:
         draw_button(back_button_rect, "← 戻る", font_common, DARK_GRAY, WHITE)
 
     elif state == "username":
-        text = font_common.render("接続完了！ユーザー名入力画面（仮）", True, (0, 255, 0))
+        title_text = font_common.render("ユーザー情報設定", True, WHITE)
+        screen.blit(title_text, (screen_width // 2 - title_text.get_width() // 2, screen_height // 2 - 200))
+
+        name_label = font_common.render("ユーザーネーム:", True, WHITE)
+        screen.blit(name_label, (screen_width // 2 - 200, screen_height // 2 - 40))
+
+        name_input_rect = pygame.Rect(screen_width // 2 - 50, screen_height // 2 - 45, 200, 35)
+        pygame.draw.rect(screen, DARK_GRAY, name_input_rect, border_radius=8)
+        pygame.draw.rect(screen, WHITE, name_input_rect, 2, border_radius=8)
+
+        name_surface = font_common.render(username, True, WHITE)
+        screen.blit(name_surface, (name_input_rect.x + 10, name_input_rect.y + (name_input_rect.height - name_surface.get_height()) // 2))
+
+        # 点滅カーソル
+        if pygame.time.get_ticks() % 1000 < 500:
+            cursor_x = name_input_rect.x + 10 + font_common.size(username)[0]
+            pygame.draw.line(screen, WHITE, (cursor_x, name_input_rect.y + 5), (cursor_x, name_input_rect.y + name_input_rect.height - 5), 2)
+
+        # 決定ボタン（ユーザーネームがあるときのみ）
+        if len(username.strip()) > 0:
+            decide_button_rect = pygame.Rect(screen_width // 2 - 75, screen_height // 2 + 50, 150, 50)
+            pygame.draw.rect(screen, RED, decide_button_rect, border_radius=12)
+            pygame.draw.rect(screen, WHITE, decide_button_rect, 2, border_radius=12)
+            decide_text = font_common.render("決定", True, WHITE)
+            screen.blit(decide_text, (decide_button_rect.centerx - decide_text.get_width() // 2,
+                                     decide_button_rect.centery - decide_text.get_height() // 2))
+
+        instruction = font_common.render("Enterキーで決定 / Escキーで戻る", True, GRAY)
+        screen.blit(instruction, (screen_width // 2 - instruction.get_width() // 2, screen_height // 2 + 120))
+        draw_button(back_button_rect, "← 戻る", font_common, DARK_GRAY, WHITE)
+
+    elif state == "select_difficulty":
+        title_surf = render_text_with_outline("難易度選択", font_title, SOFT_WHITE_BLUE, DEEP_BLUE_GRAY)
+        screen.blit(title_surf, (screen_width // 2 - title_surf.get_width() // 2, 150))
+
+        for key, rect in difficulty_buttons.items():
+            color = {"3x3": (0, 200, 0), "5x5": (230, 230, 0), "3x3x3": (200, 0, 0)}[key]
+            pygame.draw.rect(screen, color, rect, border_radius=12)
+
+            if difficulty == key:
+                pygame.draw.rect(screen, WHITE, rect, 4, border_radius=12)
+
+            label = font_button.render(key, True, (0, 0, 0))
+            screen.blit(label, (rect.x + (rect.width - label.get_width()) // 2, rect.y + 10))
+
+            desc = font_common.render(difficulty_descriptions[key], True, WHITE)
+            screen.blit(desc, (rect.x + 10, rect.y + 40))
+
+        # 準備完了ボタン
+        ready_color = (0, 180, 180) if difficulty else DARK_GRAY
+        pygame.draw.rect(screen, ready_color, ready_button, border_radius=12)
+        ready_label = font_button.render("準備完了", True, WHITE)
+        screen.blit(ready_label, (ready_button.x + (ready_button.width - ready_label.get_width()) // 2,
+                                  ready_button.y + (ready_button.height - ready_label.get_height()) // 2))
+
+        draw_button(back_button_rect, "← 戻る", font_common, DARK_GRAY, WHITE)
+
+    elif state == "waiting_for_host_rule":
+        text = font_common.render("ホストの難易度選択を待機中...", True, YELLOW)
         screen.blit(text, (screen_width // 2 - text.get_width() // 2, screen_height // 2))
+        draw_button(back_button_rect, "← 戻る", font_common, DARK_GRAY, WHITE)
 
     pygame.display.flip()
+    pygame.time.Clock().tick(30)
 
 pygame.quit()
 sys.exit()
