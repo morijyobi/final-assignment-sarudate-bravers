@@ -1,7 +1,10 @@
 import pygame
 import threading
 import sys
-from network import Network  # network.pyは別途用意済みと仮定
+from network import Network # network.pyは別途用意済みと仮定
+
+import math  # ←★これ追加！
+import random
 
 pygame.init()
 screen_info = pygame.display.Info()
@@ -34,10 +37,14 @@ input_text = ""
 username = ""
 difficulty = None
 
+effect_timer = 0
+effect_type = None  # "spark", "thunder", "fire"
+shake_offset = [0, 0]
+
 difficulty_buttons = {
-    "3x3": pygame.Rect(screen_width // 2 - 270, screen_height // 2 - 50, 150, 60),
-    "5x5": pygame.Rect(screen_width // 2 - 75, screen_height // 2 - 50, 150, 60),
-    "3x3x3": pygame.Rect(screen_width // 2 + 120, screen_height // 2 - 50, 150, 60),
+    "3x3": pygame.Rect(screen_width // 2 - 340, screen_height // 2 - 60, 220, 80),
+    "5x5": pygame.Rect(screen_width // 2 - 110, screen_height // 2 - 60, 220, 80),
+    "3x3x3": pygame.Rect(screen_width // 2 + 120, screen_height // 2 - 60, 220, 80),
 }
 ready_button = pygame.Rect(screen_width // 2 - 100, screen_height // 2 + 130, 200, 60)
 
@@ -60,9 +67,9 @@ client_thread = None
 server_button_pressed = False  # ボタン押下済みフラグ
 
 start_button_rect = pygame.Rect(screen_width // 2 - 120, screen_height - 180, 240, 80)
-room_create_button = pygame.Rect(screen_width // 2 - 180, screen_height // 2, 170, 70)
-room_join_button = pygame.Rect(screen_width // 2 + 10, screen_height // 2, 170, 70)
-back_button_rect = pygame.Rect(20, 20, 140, 50)
+room_create_button = pygame.Rect(screen_width // 2 - 220, screen_height // 2, 200, 90)
+room_join_button = pygame.Rect(screen_width // 2 + 30, screen_height // 2, 200, 90)
+back_button_rect = pygame.Rect(20, 20, 160, 80)
 connect_button_rect = pygame.Rect(screen_width - 140, screen_height - 70, 120, 50)
 ready_button_rect = connect_button_rect
 
@@ -116,9 +123,38 @@ def get_cursor_pos_from_mouse(x, text, start_x):
             return i
     return len(text)
 
+def draw_effect(effect_type, center_x, center_y):
+    if effect_type == "spark":
+        for _ in range(20):
+            angle = random.uniform(0, 2 * math.pi)
+            dist = random.randint(10, 60)
+            end_x = center_x + math.cos(angle) * dist
+            end_y = center_y + math.sin(angle) * dist
+            pygame.draw.line(screen, (0, 255, 0), (center_x, center_y), (end_x, end_y), 2)
+    elif effect_type == "thunder":
+        for _ in range(3):
+            start = (center_x + random.randint(-30, 30), center_y - 40)
+            end = (center_x + random.randint(-30, 30), center_y + 40)
+            pygame.draw.line(screen, (255, 255, 0), start, end, 4)
+    elif effect_type == "fire":
+        for _ in range(30):
+            x = center_x + random.randint(-40, 40)
+            y = center_y + random.randint(-40, 40)
+            radius = random.randint(3, 6)
+            pygame.draw.circle(screen, (255, random.randint(50, 100), 0), (x, y), radius)
+
 running = True
 while running:
-    screen.blit(background_image, (0, 0))
+    # screen.blit(background_image, (0, 0))
+    shake_offset = [0, 0]
+    if effect_timer > 0 and pygame.time.get_ticks() - effect_timer < 500:
+        shake_offset = [random.randint(-5, 5), random.randint(-5, 5)]
+    else:
+        effect_timer = 0
+        effect_type = None
+
+# 揺れた背景を描画
+    screen.blit(background_image, (shake_offset[0], shake_offset[1]))
     now = pygame.time.get_ticks()
 
     for event in pygame.event.get():
@@ -126,13 +162,23 @@ while running:
             running = False
 
         elif event.type == pygame.MOUSEBUTTONDOWN:
+            
+            if state == "username":
+                if len(username.strip()) > 0 and decide_button_rect.collidepoint(event.pos):
+                    if role == "server":
+                        state = "select_difficulty"
+                    else:
+                        state = "waiting_for_host_rule"
+
             # 戻るボタン処理
             if back_button_rect.collidepoint(event.pos) and state != "title":
                 # 状態により戻る先を変更
                 if state == "room_menu":
                     state = "title"
-                elif state in ["ip_display", "ip_input", "waiting", "username", "select_difficulty", "rule_selection", "waiting_for_host_rule"]:
+                elif state in ["ip_display", "ip_input", "waiting", "username", "rule_selection"]:
                     state = "room_menu"
+                elif state in ["select_difficulty", "waiting_for_host_rule"]:
+                    state = "username"
                 server_ready = False
                 client_ready = False
                 server_button_pressed = False
@@ -161,6 +207,14 @@ while running:
                 for key, rect in difficulty_buttons.items():
                     if rect.collidepoint(event.pos):
                         difficulty = key
+                        
+                        if key == "3x3":
+                            effect_type = "spark"
+                        elif key == "5x5":
+                            effect_type = "thunder"
+                        elif key == "3x3x3":
+                            effect_type = "fire"
+                        effect_timer = pygame.time.get_ticks()
                 if ready_button.collidepoint(event.pos) and difficulty:
                     print(f"[DEBUG] 難易度選択完了: {difficulty}")
                     # 難易度決定後の処理（例：ゲーム開始やルール画面へ遷移）
@@ -309,35 +363,44 @@ while running:
         draw_button(back_button_rect, "← 戻る", font_common, DARK_GRAY, WHITE)
 
     elif state == "username":
+        # タイトル描画
         title_text = font_common.render("ユーザー情報設定", True, WHITE)
         screen.blit(title_text, (screen_width // 2 - title_text.get_width() // 2, screen_height // 2 - 200))
 
+        # ユーザーネームラベル描画位置
+        label_x = screen_width // 2 - 200
+        label_y = screen_height // 2 - 60
         name_label = font_common.render("ユーザーネーム:", True, WHITE)
-        screen.blit(name_label, (screen_width // 2 - 200, screen_height // 2 - 40))
+        screen.blit(name_label, (label_x, label_y))
 
-        name_input_rect = pygame.Rect(screen_width // 2 - 50, screen_height // 2 - 45, 200, 35)
+        # ラベルの右隣にテキスト入力枠配置
+        label_width = name_label.get_width()
+        input_x = label_x + label_width + 10  # ラベル右端＋10pxスペース
+        input_y = label_y + 1  # ラベル高さに合わせて微調整
+
+        name_input_rect = pygame.Rect(input_x, input_y, 200, 35)
         pygame.draw.rect(screen, DARK_GRAY, name_input_rect, border_radius=8)
         pygame.draw.rect(screen, WHITE, name_input_rect, 2, border_radius=8)
 
+        # 入力中のユーザーネーム表示
         name_surface = font_common.render(username, True, WHITE)
         screen.blit(name_surface, (name_input_rect.x + 10, name_input_rect.y + (name_input_rect.height - name_surface.get_height()) // 2))
 
-        # 点滅カーソル
+        # 点滅カーソル表示
         if pygame.time.get_ticks() % 1000 < 500:
             cursor_x = name_input_rect.x + 10 + font_common.size(username)[0]
             pygame.draw.line(screen, WHITE, (cursor_x, name_input_rect.y + 5), (cursor_x, name_input_rect.y + name_input_rect.height - 5), 2)
 
-        # 決定ボタン（ユーザーネームがあるときのみ）
+        # ユーザーネーム入力済みなら決定ボタン表示
         if len(username.strip()) > 0:
             decide_button_rect = pygame.Rect(screen_width // 2 - 75, screen_height // 2 + 50, 150, 50)
             pygame.draw.rect(screen, RED, decide_button_rect, border_radius=12)
             pygame.draw.rect(screen, WHITE, decide_button_rect, 2, border_radius=12)
             decide_text = font_common.render("決定", True, WHITE)
             screen.blit(decide_text, (decide_button_rect.centerx - decide_text.get_width() // 2,
-                                     decide_button_rect.centery - decide_text.get_height() // 2))
+                                    decide_button_rect.centery - decide_text.get_height() // 2))
 
-        instruction = font_common.render("Enterキーで決定 / Escキーで戻る", True, GRAY)
-        screen.blit(instruction, (screen_width // 2 - instruction.get_width() // 2, screen_height // 2 + 120))
+        # 戻るボタン表示
         draw_button(back_button_rect, "← 戻る", font_common, DARK_GRAY, WHITE)
 
     elif state == "select_difficulty":
@@ -352,10 +415,28 @@ while running:
                 pygame.draw.rect(screen, WHITE, rect, 4, border_radius=12)
 
             label = font_button.render(key, True, (0, 0, 0))
-            screen.blit(label, (rect.x + (rect.width - label.get_width()) // 2, rect.y + 10))
+            screen.blit(label, (rect.x + (rect.width - label.get_width()) // 2, rect.y + 15))
 
-            desc = font_common.render(difficulty_descriptions[key], True, WHITE)
-            screen.blit(desc, (rect.x + 10, rect.y + 40))
+                # 選択された説明文を画面下に表示
+            if difficulty:
+                desc = font_common.render(difficulty_descriptions[difficulty], True, WHITE)
+                screen.blit(desc, (
+                    screen_width // 2 - desc.get_width() // 2,
+                    ready_button.y - 60  # ← ここに注目
+                ))
+                if effect_type:
+                    center = difficulty_buttons[difficulty].center
+                    draw_effect(effect_type, center[0], center[1])
+
+                # 準備完了ボタン
+            ready_color = (0, 180, 180) if difficulty else DARK_GRAY
+            pygame.draw.rect(screen, ready_color, ready_button, border_radius=12)
+            ready_label = font_button.render("準備完了", True, WHITE)
+            screen.blit(ready_label, (ready_button.x + (ready_button.width - ready_label.get_width()) // 2,
+                                    ready_button.y + (ready_button.height - ready_label.get_height()) // 2))
+
+            draw_button(back_button_rect, "← 戻る", font_common, DARK_GRAY, WHITE)
+
 
         # 準備完了ボタン
         ready_color = (0, 180, 180) if difficulty else DARK_GRAY
