@@ -1,6 +1,8 @@
+import tkinter as tk
 import pygame
 import threading
 import sys
+from tkinter import ttk
 from network import Network # network.pyは別途用意済みと仮定
 
 import math  # ←★これ追加！
@@ -40,6 +42,15 @@ difficulty = None
 effect_timer = 0
 effect_type = None  # "spark", "thunder", "fire"
 shake_offset = [0, 0]
+
+pulldown_icon = ["➀", "➁", "➂", "➃", " "]
+pulldown_title = ["第98代唯一皇帝", "第11皇子", "修羅" ,"失楽園"]
+
+icon_dropdown_open = False
+title_dropdown_open = False
+selected_icon_index = 0
+selected_title_index = 0
+
 
 difficulty_buttons = {
     "3x3": pygame.Rect(screen_width // 2 - 340, screen_height // 2 - 60, 220, 80),
@@ -169,6 +180,31 @@ while running:
                         state = "select_difficulty"
                     else:
                         state = "waiting_for_host_rule"
+                                # アイコンドロップダウン開閉・選択
+                                
+                if icon_box.collidepoint(event.pos):
+                    icon_dropdown_open = not icon_dropdown_open
+                    title_dropdown_open = False  # 称号が開いていたら閉じる
+                elif icon_dropdown_open:
+                    for i in range(len(pulldown_icon)):
+                        item_rect = pygame.Rect(icon_box.x, icon_box.y + 40 * (i + 1), icon_box.width, 40)
+                        if item_rect.collidepoint(event.pos):
+                            selected_icon_index = i
+                            icon_dropdown_open = False
+                            break
+
+                # 称号ドロップダウン開閉・選択
+                if title_box.collidepoint(event.pos):
+                    title_dropdown_open = not title_dropdown_open
+                    icon_dropdown_open = False  # アイコンが開いていたら閉じる
+                elif title_dropdown_open:
+                    for i in range(len(pulldown_title)):
+                        item_rect = pygame.Rect(title_box.x, title_box.y + 40 * (i + 1), title_box.width, 40)
+                        if item_rect.collidepoint(event.pos):
+                            selected_title_index = i
+                            title_dropdown_open = False
+                            break
+
 
             # 戻るボタン処理
             if back_button_rect.collidepoint(event.pos) and state != "title":
@@ -378,7 +414,7 @@ while running:
         input_x = label_x + label_width + 10  # ラベル右端＋10pxスペース
         input_y = label_y + 1  # ラベル高さに合わせて微調整
 
-        name_input_rect = pygame.Rect(input_x, input_y, 200, 35)
+        name_input_rect = pygame.Rect(input_x, input_y, 275, 35)
         pygame.draw.rect(screen, DARK_GRAY, name_input_rect, border_radius=8)
         pygame.draw.rect(screen, WHITE, name_input_rect, 2, border_radius=8)
 
@@ -393,7 +429,7 @@ while running:
 
         # ユーザーネーム入力済みなら決定ボタン表示
         if len(username.strip()) > 0:
-            decide_button_rect = pygame.Rect(screen_width // 2 - 75, screen_height // 2 + 50, 150, 50)
+            decide_button_rect = pygame.Rect(screen_width // 2 - 75, screen_height // 2 + 120, 150, 50)
             pygame.draw.rect(screen, RED, decide_button_rect, border_radius=12)
             pygame.draw.rect(screen, WHITE, decide_button_rect, 2, border_radius=12)
             decide_text = font_common.render("決定", True, WHITE)
@@ -402,6 +438,44 @@ while running:
 
         # 戻るボタン表示
         draw_button(back_button_rect, "← 戻る", font_common, DARK_GRAY, WHITE)
+        
+        # ▼ アイコン・称号プルダウンメニュー ▼
+        icon_box = pygame.Rect(screen_width // 2 - 150, input_y + 80, 120, 40)
+        title_box = pygame.Rect(screen_width // 2 + 30, input_y + 80, 220, 40)
+
+        # ボックス背景と枠線
+        pygame.draw.rect(screen, DARK_GRAY, icon_box, border_radius=8)
+        pygame.draw.rect(screen, WHITE, icon_box, 2, border_radius=8)
+        pygame.draw.rect(screen, DARK_GRAY, title_box, border_radius=8)
+        pygame.draw.rect(screen, WHITE, title_box, 2, border_radius=8)
+
+        # 現在の選択肢表示
+        icon_label = font_common.render(pulldown_icon[selected_icon_index], True, WHITE)
+        screen.blit(icon_label, (icon_box.centerx - icon_label.get_width() // 2, icon_box.y + 5))
+        title_label = font_common.render(pulldown_title[selected_title_index], True, WHITE)
+        screen.blit(title_label, (title_box.centerx - title_label.get_width() // 2, title_box.y + 5))
+
+        # ドロップダウンリスト展開（アイコン）
+        if icon_dropdown_open:
+            for i, item in enumerate(pulldown_icon):
+                item_rect = pygame.Rect(icon_box.x, icon_box.y + 40 * (i + 1), icon_box.width, 40)
+                bg_color = (70, 130, 200) if i == selected_icon_index else DARK_GRAY  # 選択中なら青背景
+                pygame.draw.rect(screen, bg_color, item_rect, border_radius=8)
+                pygame.draw.rect(screen, WHITE, item_rect, 1, border_radius=8)
+                item_label = font_common.render(item, True, WHITE)
+                screen.blit(item_label, (item_rect.centerx - item_label.get_width() // 2, item_rect.y + 5))
+
+
+        # ドロップダウンリスト展開（称号）
+        if title_dropdown_open:
+            for i, item in enumerate(pulldown_title):
+                item_rect = pygame.Rect(title_box.x, title_box.y + 40 * (i + 1), title_box.width, 40)
+                bg_color = (70, 130, 200) if i == selected_title_index else DARK_GRAY  # 選択中なら青背景
+                pygame.draw.rect(screen, bg_color, item_rect, border_radius=8)
+                pygame.draw.rect(screen, WHITE, item_rect, 1, border_radius=8)
+                item_label = font_common.render(item, True, WHITE)
+                screen.blit(item_label, (item_rect.centerx - item_label.get_width() // 2, item_rect.y + 5))
+
 
     elif state == "select_difficulty":
         title_surf = render_text_with_outline("難易度選択", font_title, SOFT_WHITE_BLUE, DEEP_BLUE_GRAY)
