@@ -5,7 +5,7 @@ import sys
 from tkinter import ttk
 from network import Network # network.pyは別途用意済みと仮定
 
-import math  # ←★これ追加！
+import math  # ←★これ追加！a
 import random
 
 pygame.init()
@@ -20,7 +20,7 @@ background_image = pygame.transform.scale(background_image, (screen_width, scree
 font_title = pygame.font.SysFont("meiryo", 48)
 font_subtitle = pygame.font.SysFont("meiryo", 24)
 font_button = pygame.font.SysFont("meiryo", 36)
-font_common = pygame.font.SysFont("meiryo", 28)
+font_common = pygame.font.SysFont("meiryo", 30)
 
 RED = (200, 30, 30)
 WHITE = (255, 255, 255)
@@ -77,11 +77,13 @@ server_thread = None
 client_thread = None
 server_button_pressed = False  # ボタン押下済みフラグ
 
+both_connected = False  # ★ サーバーとクライアント両方接続したか
+
 start_button_rect = pygame.Rect(screen_width // 2 - 120, screen_height - 180, 240, 80)
 room_create_button = pygame.Rect(screen_width // 2 - 220, screen_height // 2, 200, 90)
 room_join_button = pygame.Rect(screen_width // 2 + 30, screen_height // 2, 200, 90)
 back_button_rect = pygame.Rect(20, 20, 160, 80)
-connect_button_rect = pygame.Rect(screen_width - 140, screen_height - 70, 120, 50)
+connect_button_rect = pygame.Rect(screen_width - 250, screen_height - 70, 200, 50)
 ready_button_rect = connect_button_rect
 
 def render_text_with_outline(text, font, text_color, outline_color):
@@ -211,17 +213,21 @@ while running:
                 # 状態により戻る先を変更
                 if state == "room_menu":
                     state = "title"
-                elif state in ["ip_display", "ip_input", "waiting", "username", "rule_selection"]:
+                elif state in ["ip_display", "ip_input", "waiting", "username", "rule_selection", "select_difficulty", "waiting_for_host_rule"]:
                     state = "room_menu"
-                elif state in ["select_difficulty", "waiting_for_host_rule"]:
-                    state = "username"
-                server_ready = False
-                client_ready = False
-                server_button_pressed = False
-                input_text = ""
-                cursor_pos = 0
-                username = ""
-                difficulty = None
+                    
+                    # ★ 接続リセット処理を追加
+                    if network.connected:
+                        print("[DEBUG] 接続をリセットします")
+                        network.disconnect()
+                    server_ready = False
+                    client_ready = False
+                    server_button_pressed = False
+                    both_connected = False
+                    input_text = ""
+                    cursor_pos = 0
+                    username = ""
+                    difficulty = None
 
             # 各画面でのボタン処理
             if state == "title":
@@ -334,19 +340,16 @@ while running:
             backspace_timer = now - 200
 
     # ネットワーク接続状態によるステート遷移
-    if role == "server" and state == "ip_display" and getattr(network, "server_waiting", False):
-        server_ready = True
+   # ネットワーク接続状態によるステート遷移
+    if role == "server" and state == "ip_display" and server_ready and network.connected:
+        both_connected = True
+    elif role == "client" and state == "waiting" and client_ready and network.connected:
+        both_connected = True
 
-    if role == "client" and state == "waiting" and network.connected:
-        client_ready = True
+    if both_connected and state in ["ip_display", "waiting", "ip_input"]:
+        print("[DEBUG] 両者接続完了 → ユーザー名入力画面へ")
+        state = "username"
 
-    if state in ["ip_display", "waiting", "ip_input"]:
-        if role == "server" and server_ready:
-            print("[DEBUG] サーバー接続完了 → ユーザー名入力画面へ")
-            state = "username"
-        elif role == "client" and client_ready:
-            print("[DEBUG] クライアント接続完了 → ユーザー名入力画面へ")
-            state = "username"
 
     # 画面描画
     if state == "title":
@@ -440,8 +443,8 @@ while running:
         draw_button(back_button_rect, "← 戻る", font_common, DARK_GRAY, WHITE)
         
         # ▼ アイコン・称号プルダウンメニュー ▼
-        icon_box = pygame.Rect(screen_width // 2 - 150, input_y + 80, 120, 40)
-        title_box = pygame.Rect(screen_width // 2 + 30, input_y + 80, 220, 40)
+        icon_box = pygame.Rect(screen_width // 2 - 150, input_y + 80, 120, 50)
+        title_box = pygame.Rect(screen_width // 2 + 30, input_y + 80, 240, 50)
 
         # ボックス背景と枠線
         pygame.draw.rect(screen, DARK_GRAY, icon_box, border_radius=8)
