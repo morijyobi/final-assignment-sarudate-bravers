@@ -77,16 +77,3 @@ class Network:
             return ip
         except:
             return "IP取得失敗"
-        
-    def disconnect(self):
-        try:
-            if hasattr(self, 'conn') and self.conn:
-                self.conn.close()
-            if hasattr(self, 'sock') and self.sock:
-                self.sock.close()
-            self.connected = False
-            self.server_waiting = False
-            print("[NETWORK] 接続を切断しました")
-        except Exception as e:
-            print("[ERROR] 切断中にエラー:", e)
-
