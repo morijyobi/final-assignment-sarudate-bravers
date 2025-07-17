@@ -5,22 +5,55 @@ import sys
 from tkinter import ttk
 from network import Network # network.pyは別途用意済みと仮定
 
-import math  # ←★これ追加！a
+import math  # ←★これ追加！
 import random
 
 pygame.init()
+pygame.mixer.init()  # ←★音楽機能を初期化
 screen_info = pygame.display.Info()
 screen_width, screen_height = screen_info.current_w, screen_info.current_h
 screen = pygame.display.set_mode((screen_width, screen_height), pygame.FULLSCREEN)
 pygame.display.set_caption("コード・サルダテ")
 
-background_image = pygame.image.load("D-T9JlqUYAEo7q5.png")
-background_image = pygame.transform.scale(background_image, (screen_width, screen_height))
+# 背景画像の読み込み
+try:
+    start_background = pygame.image.load("lelouch.png")
+    start_background = pygame.transform.scale(start_background, (screen_width, screen_height))
+except pygame.error:
+    print("[DEBUG] lelouch.png が見つかりません。黒い背景を使用します。")
+    start_background = pygame.Surface((screen_width, screen_height))
+    start_background.fill((0, 0, 0))
+
+try:
+    game_background = pygame.image.load("D-T9JlqUYAEo7q5.png")
+    game_background = pygame.transform.scale(game_background, (screen_width, screen_height))
+except pygame.error:
+    print("[DEBUG] D-T9JlqUYAEo7q5.png が見つかりません。スタート背景を使用します。")
+    game_background = start_background
+
+# 現在の背景画像（初期はスタート画面の背景）
+current_background = start_background
+
+# BGM設定
+try:
+    # BGMファイルを読み込み（mp3, wav, oggなどに対応）
+    pygame.mixer.music.load("bgm.mp3")  # BGMファイルのパスを指定
+    pygame.mixer.music.set_volume(0.3)  # 音量設定（0.0-1.0）
+    pygame.mixer.music.play(-1)  # -1でループ再生
+    print("[DEBUG] BGM再生開始")
+except (pygame.error, FileNotFoundError):
+    print("[DEBUG] BGMファイルが見つかりません。BGMなしで継続します。")
+except Exception as e:
+    print(f"[DEBUG] BGM読み込みエラー: {e}")
+
+# BGM関連変数
+bgm_volume = 0.3  # 初期音量
+bgm_enabled = True  # BGMのオン/オフ
 
 font_title = pygame.font.SysFont("meiryo", 48)
 font_subtitle = pygame.font.SysFont("meiryo", 24)
 font_button = pygame.font.SysFont("meiryo", 36)
-font_common = pygame.font.SysFont("meiryo", 30)
+font_common = pygame.font.SysFont("meiryo", 28)
 
 RED = (200, 30, 30)
 WHITE = (255, 255, 255)
@@ -51,7 +84,6 @@ title_dropdown_open = False
 selected_icon_index = 0
 selected_title_index = 0
 
-
 difficulty_buttons = {
     "3x3": pygame.Rect(screen_width // 2 - 340, screen_height // 2 - 60, 220, 80),
     "5x5": pygame.Rect(screen_width // 2 - 110, screen_height // 2 - 60, 220, 80),
@@ -77,13 +109,11 @@ server_thread = None
 client_thread = None
 server_button_pressed = False  # ボタン押下済みフラグ
 
-both_connected = False  # ★ サーバーとクライアント両方接続したか
-
 start_button_rect = pygame.Rect(screen_width // 2 - 120, screen_height - 180, 240, 80)
 room_create_button = pygame.Rect(screen_width // 2 - 220, screen_height // 2, 200, 90)
 room_join_button = pygame.Rect(screen_width // 2 + 30, screen_height // 2, 200, 90)
 back_button_rect = pygame.Rect(20, 20, 160, 80)
-connect_button_rect = pygame.Rect(screen_width - 250, screen_height - 70, 200, 50)
+connect_button_rect = pygame.Rect(screen_width - 140, screen_height - 70, 120, 50)
 ready_button_rect = connect_button_rect
 
 def render_text_with_outline(text, font, text_color, outline_color):
@@ -158,7 +188,17 @@ def draw_effect(effect_type, center_x, center_y):
 
 running = True
 while running:
-    # screen.blit(background_image, (0, 0))
+    # マウス位置取得
+    mouse_pos = pygame.mouse.get_pos()
+    
+    # タイトル画面でのスタートボタンホバー効果
+    if state == "title":
+        if start_button_rect.collidepoint(mouse_pos):
+            current_background = game_background  # ホバー時は D-T9JlqUYAEo7q5.png
+        else:
+            current_background = start_background  # 通常時は lelouch.png
+    
+    # 揺れ効果の処理
     shake_offset = [0, 0]
     if effect_timer > 0 and pygame.time.get_ticks() - effect_timer < 500:
         shake_offset = [random.randint(-5, 5), random.randint(-5, 5)]
@@ -166,8 +206,8 @@ while running:
         effect_timer = 0
         effect_type = None
 
-# 揺れた背景を描画
-    screen.blit(background_image, (shake_offset[0], shake_offset[1]))
+    # 現在の背景を描画（揺れ効果込み）
+    screen.blit(current_background, (shake_offset[0], shake_offset[1]))
     now = pygame.time.get_ticks()
 
     for event in pygame.event.get():
@@ -213,25 +253,22 @@ while running:
                 # 状態により戻る先を変更
                 if state == "room_menu":
                     state = "title"
-                elif state in ["ip_display", "ip_input", "waiting", "username", "rule_selection", "select_difficulty", "waiting_for_host_rule"]:
+                elif state in ["ip_display", "ip_input", "waiting", "username", "rule_selection"]:
                     state = "room_menu"
-                    
-                    # ★ 接続リセット処理を追加
-                    if network.connected:
-                        print("[DEBUG] 接続をリセットします")
-                        network.disconnect()
-                    server_ready = False
-                    client_ready = False
-                    server_button_pressed = False
-                    both_connected = False
-                    input_text = ""
-                    cursor_pos = 0
-                    username = ""
-                    difficulty = None
+                elif state in ["select_difficulty", "waiting_for_host_rule"]:
+                    state = "username"
+                server_ready = False
+                client_ready = False
+                server_button_pressed = False
+                input_text = ""
+                cursor_pos = 0
+                username = ""
+                difficulty = None
 
             # 各画面でのボタン処理
             if state == "title":
                 if start_button_rect.collidepoint(event.pos):
+                    current_background = game_background  # クリック後は D-T9JlqUYAEo7q5.png を維持
                     state = "room_menu"
 
             elif state == "room_menu":
@@ -282,7 +319,50 @@ while running:
                         cursor_pos = get_cursor_pos_from_mouse(mx, input_text, input_x)
 
         elif event.type == pygame.KEYDOWN:
-            if state == "ip_input":
+            print(f"[DEBUG] キー押下: {event.key}, 名前: {pygame.key.name(event.key)}")
+            
+            # BGM音量調整（全画面共通）- 日本語キーボード対応版
+            keys = pygame.key.get_pressed()
+            
+            # +キーの検出（複数パターン対応）
+            plus_pressed = (
+                event.key == pygame.K_EQUALS or  # =キー
+                event.key == pygame.K_KP_PLUS or  # テンキーの+
+                (event.key == pygame.K_SEMICOLON and (keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT])) or  # Shift + ;
+                (event.key == pygame.K_EQUALS and (keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]))  # Shift + =
+            )
+            
+            # -キーの検出（複数パターン対応）
+            minus_pressed = (
+                event.key == pygame.K_MINUS or  # -キー
+                event.key == pygame.K_KP_MINUS or  # テンキーの-
+                (event.key == pygame.K_MINUS and (keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]))  # Shift + -
+            )
+            
+            if plus_pressed:
+                print("[DEBUG] +キーが押されました")
+                if bgm_volume < 1.0:
+                    bgm_volume = min(1.0, bgm_volume + 0.1)
+                    pygame.mixer.music.set_volume(bgm_volume)
+                    print(f"[DEBUG] BGM音量アップ: {bgm_volume:.1f}")
+            elif minus_pressed:
+                print("[DEBUG] -キーが押されました")
+                if bgm_volume > 0.0:
+                    bgm_volume = max(0.0, bgm_volume - 0.1)
+                    pygame.mixer.music.set_volume(bgm_volume)
+                    print(f"[DEBUG] BGM音量ダウン: {bgm_volume:.1f}")
+            elif event.key == pygame.K_m:
+                print("[DEBUG] Mキーが押されました")
+                bgm_enabled = not bgm_enabled
+                if bgm_enabled:
+                    pygame.mixer.music.set_volume(bgm_volume)
+                    print("[DEBUG] BGMオン")
+                else:
+                    pygame.mixer.music.set_volume(0)
+                    print("[DEBUG] BGMオフ")
+            
+            # 各状態での個別キー処理
+            elif state == "ip_input":
                 if event.key == pygame.K_BACKSPACE:
                     backspace_pressed = True
                     backspace_timer = now
@@ -302,9 +382,6 @@ while running:
                 elif event.unicode.isprintable() and len(input_text) < 15:
                     input_text = input_text[:cursor_pos] + event.unicode + input_text[cursor_pos:]
                     cursor_pos += 1
-
-            elif event.type == pygame.KEYUP and event.key == pygame.K_BACKSPACE:
-                backspace_pressed = False
 
             elif state == "username":
                 if event.key == pygame.K_RETURN:
@@ -340,16 +417,19 @@ while running:
             backspace_timer = now - 200
 
     # ネットワーク接続状態によるステート遷移
-   # ネットワーク接続状態によるステート遷移
-    if role == "server" and state == "ip_display" and server_ready and network.connected:
-        both_connected = True
-    elif role == "client" and state == "waiting" and client_ready and network.connected:
-        both_connected = True
+    if role == "server" and state == "ip_display" and getattr(network, "server_waiting", False):
+        server_ready = True
 
-    if both_connected and state in ["ip_display", "waiting", "ip_input"]:
-        print("[DEBUG] 両者接続完了 → ユーザー名入力画面へ")
-        state = "username"
+    if role == "client" and state == "waiting" and network.connected:
+        client_ready = True
 
+    if state in ["ip_display", "waiting", "ip_input"]:
+        if role == "server" and server_ready:
+            print("[DEBUG] サーバー接続完了 → ユーザー名入力画面へ")
+            state = "username"
+        elif role == "client" and client_ready:
+            print("[DEBUG] クライアント接続完了 → ユーザー名入力画面へ")
+            state = "username"
 
     # 画面描画
     if state == "title":
@@ -443,8 +523,8 @@ while running:
         draw_button(back_button_rect, "← 戻る", font_common, DARK_GRAY, WHITE)
         
         # ▼ アイコン・称号プルダウンメニュー ▼
-        icon_box = pygame.Rect(screen_width // 2 - 150, input_y + 80, 120, 50)
-        title_box = pygame.Rect(screen_width // 2 + 30, input_y + 80, 240, 50)
+        icon_box = pygame.Rect(screen_width // 2 - 150, input_y + 80, 120, 40)
+        title_box = pygame.Rect(screen_width // 2 + 30, input_y + 80, 220, 40)
 
         # ボックス背景と枠線
         pygame.draw.rect(screen, DARK_GRAY, icon_box, border_radius=8)
@@ -528,6 +608,16 @@ while running:
         text = font_common.render("ホストの難易度選択を待機中...", True, YELLOW)
         screen.blit(text, (screen_width // 2 - text.get_width() // 2, screen_height // 2))
         draw_button(back_button_rect, "← 戻る", font_common, DARK_GRAY, WHITE)
+
+    # BGM情報表示（全画面共通）
+    bgm_info = f"BGM: {'ON' if bgm_enabled else 'OFF'} | 音量: {int(bgm_volume * 100)}%"
+    bgm_text = pygame.font.SysFont("meiryo", 16).render(bgm_info, True, (200, 200, 200))
+    screen.blit(bgm_text, (10, screen_height - 30))
+    
+    # BGM操作説明
+    control_info = "+/-: 音量調整 | M: ミュート切替"
+    control_text = pygame.font.SysFont("meiryo", 14).render(control_info, True, (150, 150, 150))
+    screen.blit(control_text, (10, screen_height - 50))
 
     pygame.display.flip()
     pygame.time.Clock().tick(30)
