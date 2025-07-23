@@ -84,6 +84,7 @@ class Network:
             s.close()
             return ip
         except:
+
             return "IP取得失敗"
         
     def disconnect(self):
@@ -113,3 +114,6 @@ class Network:
         elif msg == "READY":
             opponent_ready = True
             print("[DEBUG] 相手がREADYになった")
+
+            return "IP取得失敗"
+
