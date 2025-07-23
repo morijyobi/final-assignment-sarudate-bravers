@@ -5,7 +5,7 @@ import sys
 from tkinter import ttk
 from network import Network # network.pyは別途用意済みと仮定
 
-import math  # ←★これ追加！a
+import math  # ←★これ追加！
 import random
 
 pygame.init()
@@ -14,8 +14,14 @@ screen_width, screen_height = screen_info.current_w, screen_info.current_h
 screen = pygame.display.set_mode((screen_width, screen_height), pygame.FULLSCREEN)
 pygame.display.set_caption("コード・サルダテ")
 
-background_image = pygame.image.load("D-T9JlqUYAEo7q5.png")
-background_image = pygame.transform.scale(background_image, (screen_width, screen_height))
+try:
+    background_image = pygame.image.load("./D-T9JlqUYAEo7q5.png")
+    background_image = pygame.transform.scale(background_image, (screen_width, screen_height))
+    print("[DEBUG] 背景画像を正常に読み込みました")
+except (pygame.error, FileNotFoundError) as e:
+    print(f"[DEBUG] 背景画像が見つかりません: {e}")
+    background_image = pygame.Surface((screen_width, screen_height))
+    background_image.fill((20, 20, 20))  # 暗い灰色の背景
 
 font_title = pygame.font.SysFont("meiryo", 48)
 font_subtitle = pygame.font.SysFont("meiryo", 24)
@@ -38,6 +44,49 @@ ip_address = ""
 input_text = ""
 username = ""
 difficulty = None
+
+def process_network_messages():
+    global opponent_username, opponent_icon_index, opponent_title_index, opponent_ready, state, turn_decided, my_turn, turn_announcement_timer
+    msg = network.receive()
+    if msg:
+        print(f"[DEBUG] 受信メッセージ: {msg}")
+        if msg.startswith("INFO:"):
+            _, name, icon_idx, title_idx = msg.split(":")
+            opponent_username = name
+            opponent_icon_index = int(icon_idx)
+            opponent_title_index = int(title_idx)
+            print(f"[DEBUG] 相手情報更新: {opponent_username}, {opponent_icon_index}, {opponent_title_index}")
+            if state == "waiting_for_host_rule":
+                state = "preparation"
+                print("[DEBUG] クライアント側: preparation に遷移")
+        elif msg == "READY":
+            opponent_ready = True
+            print("[DEBUG] 相手がREADYになった！")
+        elif msg == "CANCEL_READY":
+            opponent_ready = False
+            print("[DEBUG] 相手がREADYキャンセル！")
+        elif msg.startswith("TURN:"):
+            # 相手から先行後攻情報を受信
+            _, opponent_turn_str = msg.split(":")
+            opponent_turn = opponent_turn_str == "True"
+            my_turn = not opponent_turn  # 相手の逆が自分
+            turn_decided = True
+            turn_announcement_timer = pygame.time.get_ticks()
+            print(f"[DEBUG] 相手から先行後攻受信: 自分={'先行（○）' if my_turn else '後攻（×）'}")
+
+# 準備確認用
+my_ready = False
+opponent_ready = False
+opponent_username = ""
+opponent_icon_index = None
+opponent_title_index = None
+opponent_info_received = False  # 相手のINFO受信済みかどうか
+
+# 先行後攻決定用
+turn_decided = False  # 先行後攻が決定済みか
+my_turn = None  # True: 自分が先行（○）, False: 自分が後攻（×）
+turn_announcement_timer = 0  # 先行後攻発表のタイマー
+
 
 effect_timer = 0
 effect_type = None  # "spark", "thunder", "fire"
@@ -76,6 +125,11 @@ client_ready = False
 server_thread = None
 client_thread = None
 server_button_pressed = False  # ボタン押下済みフラグ
+# 相手のユーザー情報
+opponent_username = ""
+opponent_icon_index = None
+opponent_title_index = None
+
 
 both_connected = False  # ★ サーバーとクライアント両方接続したか
 
@@ -158,6 +212,7 @@ def draw_effect(effect_type, center_x, center_y):
 
 running = True
 while running:
+    process_network_messages()
     # screen.blit(background_image, (0, 0))
     shake_offset = [0, 0]
     if effect_timer > 0 and pygame.time.get_ticks() - effect_timer < 500:
@@ -175,6 +230,20 @@ while running:
             running = False
 
         elif event.type == pygame.MOUSEBUTTONDOWN:
+            print("現在のstate:", state)
+            
+            if state == "preparation":
+                if my_ready_button.collidepoint(event.pos):
+                    if not my_ready:
+                        network.send("READY")
+                        my_ready = True
+                        print("[DEBUG] 自分がREADYになった")
+                    else:
+                        network.send("CANCEL_READY")
+                        my_ready = False
+                        print("[DEBUG] 自分がREADYキャンセルした")
+            
+            
             
             if state == "username":
                 if len(username.strip()) > 0 and decide_button_rect.collidepoint(event.pos):
@@ -213,7 +282,7 @@ while running:
                 # 状態により戻る先を変更
                 if state == "room_menu":
                     state = "title"
-                elif state in ["ip_display", "ip_input", "waiting", "username", "rule_selection", "select_difficulty", "waiting_for_host_rule"]:
+                elif state in ["ip_display", "ip_input", "waiting", "username", "rule_selection", "select_difficulty", "waiting_for_host_rule", "preparation"]:
                     state = "room_menu"
                     
                     # ★ 接続リセット処理を追加
@@ -228,11 +297,21 @@ while running:
                     cursor_pos = 0
                     username = ""
                     difficulty = None
+                    
+                    # 先行後攻状態をリセット
+                    turn_decided = False
+                    my_turn = None
+                    turn_announcement_timer = 0
+                    input_text = ""
+                    cursor_pos = 0
+                    username = ""
+                    difficulty = None
 
             # 各画面でのボタン処理
             if state == "title":
                 if start_button_rect.collidepoint(event.pos):
                     state = "room_menu"
+
 
             elif state == "room_menu":
                 if room_create_button.collidepoint(event.pos):
@@ -245,11 +324,13 @@ while running:
                     cursor_pos = 0
                     state = "ip_input"
 
+            
             elif state == "select_difficulty":
                 for key, rect in difficulty_buttons.items():
                     if rect.collidepoint(event.pos):
                         difficulty = key
                         
+                        # エフェクト種類を設定
                         if key == "3x3":
                             effect_type = "spark"
                         elif key == "5x5":
@@ -257,10 +338,32 @@ while running:
                         elif key == "3x3x3":
                             effect_type = "fire"
                         effect_timer = pygame.time.get_ticks()
+
+                # 準備完了ボタンが押されたとき
                 if ready_button.collidepoint(event.pos) and difficulty:
                     print(f"[DEBUG] 難易度選択完了: {difficulty}")
-                    # 難易度決定後の処理（例：ゲーム開始やルール画面へ遷移）
-                    # state = "rule_selection"  # 必要に応じて変更
+                    
+                    
+                    # 自分と相手の準備状態をリセット
+                    my_ready = False
+                    opponent_ready = False
+                    
+                    # 先行後攻状態をリセット
+                    turn_decided = False
+                    my_turn = None
+                    turn_announcement_timer = 0
+                    
+                    import time
+                    time.sleep(0.3)  # ★ 追加！
+                    
+                    info_message = f"INFO:{username}:{selected_icon_index}:{selected_title_index}"
+                    network.send(info_message)
+
+                    # 画面遷移と初期化
+                    state = "preparation"
+                    my_ready = False
+                    opponent_ready = False
+
 
             elif state == "ip_display" and role == "server":
                 if ready_button_rect.collidepoint(event.pos) and not server_ready and not server_button_pressed:
@@ -295,16 +398,17 @@ while running:
                     cursor_pos += 1
                 elif event.key == pygame.K_RETURN:
                     trimmed_ip = input_text.strip()
+                    print(f"[DEBUG] Enterキー押下: IPアドレス='{trimmed_ip}'")
                     if trimmed_ip:
+                        print("[DEBUG] Enterキー: 接続処理開始")
                         state = "waiting"
                         client_thread = threading.Thread(target=connect_client_thread, args=(trimmed_ip,), daemon=True)
                         client_thread.start()
+                    else:
+                        print("[DEBUG] Enterキー: IPアドレスが空のため接続せず")
                 elif event.unicode.isprintable() and len(input_text) < 15:
                     input_text = input_text[:cursor_pos] + event.unicode + input_text[cursor_pos:]
                     cursor_pos += 1
-
-            elif event.type == pygame.KEYUP and event.key == pygame.K_BACKSPACE:
-                backspace_pressed = False
 
             elif state == "username":
                 if event.key == pygame.K_RETURN:
@@ -324,12 +428,78 @@ while running:
                     if len(username) < 12:
                         username += event.unicode
 
+            elif state == "ip_display":
+                # ルーム作成画面でEnterキーを押すと準備OKボタンを押したことになる
+                if event.key == pygame.K_RETURN and role == "server" and not server_ready and not server_button_pressed:
+                    print("[DEBUG] Enterキー: サーバー準備OKボタン押下")
+                    server_button_pressed = True
+                    server_thread = threading.Thread(target=start_server_thread, daemon=True)
+                    server_thread.start()
+
+            elif state == "preparation":
+                # 準備完了画面でEnterキーを押すとREADYボタンを押したことになる
+                if event.key == pygame.K_RETURN:
+                    if not my_ready:
+                        network.send("READY")
+                        my_ready = True
+                        print("[DEBUG] Enterキー: 自分がREADYになった")
+                    else:
+                        network.send("CANCEL_READY")
+                        my_ready = False
+                        print("[DEBUG] Enterキー: 自分がREADYキャンセルした")
+
+            elif state == "select_difficulty":
+                # 難易度選択画面でEnterキーを押すと準備完了ボタンを押したことになる
+                if event.key == pygame.K_RETURN and difficulty:
+                    print(f"[DEBUG] Enterキー: 難易度選択完了 {difficulty}")
+                    
+                    # 自分と相手の準備状態をリセット
+                    my_ready = False
+                    opponent_ready = False
+                    
+                    # 先行後攻状態をリセット
+                    turn_decided = False
+                    my_turn = None
+                    turn_announcement_timer = 0
+                    
+                    import time
+                    time.sleep(0.3)
+                    
+                    info_message = f"INFO:{username}:{selected_icon_index}:{selected_title_index}"
+                    network.send(info_message)
+
+                    # 画面遷移と初期化
+                    state = "preparation"
+                    my_ready = False
+                    opponent_ready = False
+
             elif state == "rule_selection":
                 if event.key == pygame.K_ESCAPE:
                     state = "username"
 
         elif event.type == pygame.KEYUP and event.key == pygame.K_BACKSPACE:
             backspace_pressed = False
+
+        elif event.type == pygame.KEYUP and event.key == pygame.K_BACKSPACE:
+            backspace_pressed = False
+            
+    if state == "preparation":
+        if my_ready and opponent_ready and not turn_decided:
+            # 先行後攻をランダムで決定
+            my_turn = random.choice([True, False])  # True: 先行（○）, False: 後攻（×）
+            turn_decided = True
+            turn_announcement_timer = pygame.time.get_ticks()
+            
+            # ネットワークで先行後攻情報を送信
+            turn_message = f"TURN:{my_turn}"
+            network.send(turn_message)
+            
+            print(f"[DEBUG] 先行後攻決定: 自分={'先行（○）' if my_turn else '後攻（×）'}")
+        
+        # 3秒後にゲーム画面へ遷移
+        if turn_decided and pygame.time.get_ticks() - turn_announcement_timer > 3000:
+            print("[DEBUG] 先行後攻決定完了 → ゲーム画面へ遷移")
+            state = "game"
 
     # バックスペース長押し処理（IP入力画面）
     if state == "ip_input" and backspace_pressed:
@@ -340,7 +510,6 @@ while running:
             backspace_timer = now - 200
 
     # ネットワーク接続状態によるステート遷移
-   # ネットワーク接続状態によるステート遷移
     if role == "server" and state == "ip_display" and server_ready and network.connected:
         both_connected = True
     elif role == "client" and state == "waiting" and client_ready and network.connected:
@@ -390,7 +559,7 @@ while running:
         draw_button(back_button_rect, "← 戻る", font_common, DARK_GRAY, WHITE)
 
     elif state == "ip_input":
-        label = font_common.render("IPアドレス入力画面", True, WHITE)
+        label = font_common.render("ルーム入室画面", True, WHITE)
         screen.blit(label, (screen_width // 2 - label.get_width() // 2, 150))
         draw_ip_input_field(screen, input_text, cursor_pos)
         draw_button(connect_button_rect, "接続", font_common, DARK_GRAY, WHITE)
@@ -514,17 +683,105 @@ while running:
 
             draw_button(back_button_rect, "← 戻る", font_common, DARK_GRAY, WHITE)
 
+        
+    elif state == "preparation":
+                # printを先頭に入れて、このブロックが呼ばれているか確認する
+        
+                screen.blit(background_image, (0, 0))
+                y_base = screen_height // 3
+                left_x = screen_width // 4
+                right_x = screen_width * 3 // 4
 
-        # 準備完了ボタン
-        ready_color = (0, 180, 180) if difficulty else DARK_GRAY
-        pygame.draw.rect(screen, ready_color, ready_button, border_radius=12)
-        ready_label = font_button.render("準備完了", True, WHITE)
-        screen.blit(ready_label, (ready_button.x + (ready_button.width - ready_label.get_width()) // 2,
-                                  ready_button.y + (ready_button.height - ready_label.get_height()) // 2))
+                # 自分の情報表示
+                name_surface = font_common.render(username, True, WHITE)
+                
+                if name_surface is None:
+                    print("⚠️ name_surfaceがNoneです！")
+                else:
+                    screen.blit(name_surface, (left_x - name_surface.get_width() // 2, y_base))
+                    
+                screen.blit(name_surface, (left_x - name_surface.get_width() // 2, y_base))
+                icon_surface = font_common.render(pulldown_icon[selected_icon_index], True, WHITE)
+                screen.blit(icon_surface, (left_x - icon_surface.get_width() // 2, y_base + 40))
+                title_surface = font_common.render(pulldown_title[selected_title_index], True, WHITE)
+                screen.blit(title_surface, (left_x - title_surface.get_width() // 2, y_base + 80))
 
-        draw_button(back_button_rect, "← 戻る", font_common, DARK_GRAY, WHITE)
+                # 自分のREADYボタン
+                my_ready_button = pygame.Rect(left_x - 70, y_base + 140, 140, 50)
+                ready_color = (0, 180, 0) if my_ready else DARK_GRAY
+                pygame.draw.rect(screen, ready_color, my_ready_button, border_radius=12)
+                label = font_common.render("READY", True, WHITE)
+                screen.blit(label, (my_ready_button.centerx - label.get_width() // 2,
+                                    my_ready_button.centery - label.get_height() // 2))
+
+                # 相手の情報
+                opp_name = opponent_username if opponent_username else "???"
+                opp_icon = pulldown_icon[opponent_icon_index] if opponent_icon_index is not None else "?"
+                opp_title = pulldown_title[opponent_title_index] if opponent_title_index is not None else "???"
+                opp_name_surface = font_common.render(opp_name, True, WHITE)
+                screen.blit(opp_name_surface, (right_x - opp_name_surface.get_width() // 2, y_base))
+                opp_icon_surface = font_common.render(opp_icon, True, WHITE)
+                screen.blit(opp_icon_surface, (right_x - opp_icon_surface.get_width() // 2, y_base + 40))
+                opp_title_surface = font_common.render(opp_title, True, WHITE)
+                screen.blit(opp_title_surface, (right_x - opp_title_surface.get_width() // 2, y_base + 80))
+
+                # 相手のREADY状態表示
+                opp_status = "READY" if opponent_ready else "WAITING..."
+                opp_color = (0, 255, 0) if opponent_ready else GRAY
+                opp_status_surf = font_common.render(opp_status, True, opp_color)
+                screen.blit(opp_status_surf, (right_x - opp_status_surf.get_width() // 2, y_base + 150))
+
+                # 中央に「VS」または先行後攻発表
+                if turn_decided:
+                    # 先行後攻が決定済みの場合、発表を表示
+                    my_role = "先行（○）" if my_turn else "後攻（×）"
+                    opponent_role = "後攻（×）" if my_turn else "先行（○）"
+                    
+                    # 自分の役割を左側に表示
+                    my_role_surf = font_common.render(my_role, True, YELLOW)
+                    screen.blit(my_role_surf, (left_x - my_role_surf.get_width() // 2, y_base + 200))
+                    
+                    # 相手の役割を右側に表示
+                    opp_role_surf = font_common.render(opponent_role, True, YELLOW)
+                    screen.blit(opp_role_surf, (right_x - opp_role_surf.get_width() // 2, y_base + 200))
+                    
+                    # 中央に「先行後攻決定！」
+                    announcement_surf = font_title.render("先行後攻決定！", True, RED)
+                    screen.blit(announcement_surf, (screen_width // 2 - announcement_surf.get_width() // 2, screen_height // 2 - 30))
+                    
+                    # カウントダウン表示
+                    remaining_time = max(0, 3 - (pygame.time.get_ticks() - turn_announcement_timer) // 1000)
+                    countdown_surf = font_common.render(f"ゲーム開始まであと {remaining_time} 秒", True, WHITE)
+                    screen.blit(countdown_surf, (screen_width // 2 - countdown_surf.get_width() // 2, screen_height // 2 + 50))
+                else:
+                    # まだ決定していない場合、従来のVS表示
+                    vs_surf = font_title.render("VS", True, RED)
+                    screen.blit(vs_surf, (screen_width // 2 - vs_surf.get_width() // 2, screen_height // 2 - 30))
+                # 戻るボタン
+                draw_button(back_button_rect, "← 戻る", font_common, DARK_GRAY, WHITE)
 
     elif state == "waiting_for_host_rule":
+            # まだ送ってなければ
+        if not hasattr(network, "info_sent"):
+            info_message = f"INFO:{username}:{selected_icon_index}:{selected_title_index}"
+            network.send(info_message)
+            print("[DEBUG] クライアント → INFOメッセージ送信:", info_message)
+            network.info_sent = True
+
+        # --- INFO 受信チェックを先に ---
+        msg = network.receive()
+        if msg and msg.startswith("INFO:"):
+            _, name, icon_idx, title_idx = msg.split(":")
+            opponent_username = name
+            opponent_icon_index = int(icon_idx)
+            opponent_title_index = int(title_idx)
+            print(f"[DEBUG] クライアントがINFOを受信: {name}, {icon_idx}, {title_idx}")
+
+            # ★ ここで遷移！
+            state = "preparation"
+            print("[DEBUG] クライアント側: preparation に遷移")
+
+        # --- 画面描画 ---
         text = font_common.render("ホストの難易度選択を待機中...", True, YELLOW)
         screen.blit(text, (screen_width // 2 - text.get_width() // 2, screen_height // 2))
         draw_button(back_button_rect, "← 戻る", font_common, DARK_GRAY, WHITE)

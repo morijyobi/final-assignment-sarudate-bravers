@@ -47,12 +47,20 @@ class Network:
                     self.connected = False
                     break
                 message = data.decode()
+                
+                print("[DEBUG] 受信したメッセージ:", message)
+                
+                # ★ INFOやREADYの処理をここで行う
+                self._handle_received_message(message)
+
                 with self.lock:
                     self.recv_buffer.append(message)
+
             except Exception as e:
                 print("受信エラー:", e)
                 self.connected = False
                 break
+
 
     def send(self, data: str):
         if self.connected:
@@ -89,4 +97,19 @@ class Network:
             print("[NETWORK] 接続を切断しました")
         except Exception as e:
             print("[ERROR] 切断中にエラー:", e)
+            
+    def _handle_received_message(self, msg): 
+        global opponent_username, opponent_icon_index, opponent_title_index, opponent_ready  # ← これが先！
+        global opponent_info_received
+        
+        if msg.startswith("INFO:"):
+            _, name, icon_idx, title_idx = msg.split(":")
+            opponent_username = name
+            opponent_icon_index = int(icon_idx)
+            opponent_title_index = int(title_idx)
+            opponent_info_received = True 
+            print(f"[DEBUG] 相手情報受信: {name}, {icon_idx}, {title_idx}")
 
+        elif msg == "READY":
+            opponent_ready = True
+            print("[DEBUG] 相手がREADYになった")
