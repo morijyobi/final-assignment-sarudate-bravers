@@ -4,6 +4,7 @@ import threading
 import sys
 from tkinter import ttk
 from network import Network # network.pyは別途用意済みと仮定
+import threexthree  # 3x3ゲームモジュールをインポート
 
 import math  # ←★これ追加！
 import random
@@ -84,16 +85,38 @@ username = ""
 difficulty = None
 
 def process_network_messages():
-    global opponent_username, opponent_icon_index, opponent_title_index, opponent_ready, state, turn_decided, my_turn, turn_announcement_timer
+    global opponent_username, opponent_icon_index, opponent_title_index, opponent_ready, state, turn_decided, my_turn, turn_announcement_timer, running, difficulty, role, username, selected_icon_index, selected_title_index, pending_info_response
     msg = network.receive()
     if msg:
         print(f"[DEBUG] 受信メッセージ: {msg}")
         if msg.startswith("INFO:"):
-            _, name, icon_idx, title_idx = msg.split(":")
-            opponent_username = name
-            opponent_icon_index = int(icon_idx)
-            opponent_title_index = int(title_idx)
-            print(f"[DEBUG] 相手情報更新: {opponent_username}, {opponent_icon_index}, {opponent_title_index}")
+            parts = msg.split(":")
+            if len(parts) >= 5:  # 新しい形式: INFO:name:icon:title:difficulty
+                _, name, icon_idx, title_idx, diff = parts
+                opponent_username = name
+                opponent_icon_index = int(icon_idx)
+                opponent_title_index = int(title_idx)
+                difficulty = diff  # クライアント側でも難易度を設定
+                print(f"[DEBUG] 相手情報更新（難易度付き）: {opponent_username}, {opponent_icon_index}, {opponent_title_index}, {difficulty}")
+            else:  # 古い形式との互換性
+                _, name, icon_idx, title_idx = parts
+                opponent_username = name
+                opponent_icon_index = int(icon_idx)
+                opponent_title_index = int(title_idx)
+                print(f"[DEBUG] 相手情報更新: {opponent_username}, {opponent_icon_index}, {opponent_title_index}")
+            
+            # サーバー側が難易度選択中にクライアントのINFOを受信した場合の処理
+            if state == "select_difficulty" and role == "server":
+                if difficulty:
+                    # 既に難易度選択済みの場合、即座に応答
+                    print("[DEBUG] サーバー側: クライアントのINFO受信、応答を送信")
+                    info_response = f"INFO:{username}:{selected_icon_index}:{selected_title_index}:{difficulty}"
+                    network.send(info_response)
+                else:
+                    # 難易度未選択の場合、応答待機フラグを設定
+                    print("[DEBUG] サーバー側: クライアントのINFO受信、難易度選択後に応答予定")
+                    pending_info_response = True
+            
             if state == "waiting_for_host_rule":
                 state = "preparation"
                 print("[DEBUG] クライアント側: preparation に遷移")
@@ -111,6 +134,25 @@ def process_network_messages():
             turn_decided = True
             turn_announcement_timer = pygame.time.get_ticks()
             print(f"[DEBUG] 相手から先行後攻受信: 自分={'先行（○）' if my_turn else '後攻（×）'}")
+        elif msg == "GAME_START":
+            # 相手からゲーム開始メッセージを受信
+            print("[DEBUG] 相手からGAME_STARTメッセージを受信")
+            if difficulty == "3x3":
+                print("[DEBUG] 3x3ゲームを開始します")
+                # プレイヤー情報を準備
+                my_info = (username, pulldown_icon[selected_icon_index], pulldown_title[selected_title_index])
+                opponent_info = (opponent_username, pulldown_icon[opponent_icon_index], pulldown_title[opponent_title_index])
+                
+                # threexthree.pyのゲームを初期化して開始
+                threexthree.init_game(my_info, opponent_info, my_turn, network)
+                
+                # メインループを終了してthreexthree.pyのメインループに移行
+                running = False
+                # threexthree.pyのメインループを実行
+                threexthree.main()
+                # threexthree.pyが終了したらプログラム全体を終了
+                pygame.quit()
+                sys.exit()
 
 # 準備確認用
 my_ready = False
@@ -119,6 +161,7 @@ opponent_username = ""
 opponent_icon_index = None
 opponent_title_index = None
 opponent_info_received = False  # 相手のINFO受信済みかどうか
+pending_info_response = False  # サーバー側でクライアントINFO受信済み、応答待機中
 
 # 先行後攻決定用
 turn_decided = False  # 先行後攻が決定済みか
@@ -420,8 +463,13 @@ while running:
                     import time
                     time.sleep(0.3)  # ★ 追加！
                     
-                    info_message = f"INFO:{username}:{selected_icon_index}:{selected_title_index}"
+                    info_message = f"INFO:{username}:{selected_icon_index}:{selected_title_index}:{difficulty}"
                     network.send(info_message)
+                    
+                    # 待機中のクライアント応答があれば送信
+                    if pending_info_response:
+                        print("[DEBUG] サーバー側: 待機中だったクライアント応答を送信")
+                        pending_info_response = False
 
                     # 画面遷移と初期化
                     state = "preparation"
@@ -572,8 +620,13 @@ while running:
                     import time
                     time.sleep(0.3)
                     
-                    info_message = f"INFO:{username}:{selected_icon_index}:{selected_title_index}"
+                    info_message = f"INFO:{username}:{selected_icon_index}:{selected_title_index}:{difficulty}"
                     network.send(info_message)
+                    
+                    # 待機中のクライアント応答があれば送信
+                    if pending_info_response:
+                        print("[DEBUG] サーバー側: 待機中だったクライアント応答を送信（Enter）")
+                        pending_info_response = False
 
                     # 画面遷移と初期化
                     state = "preparation"
@@ -605,8 +658,31 @@ while running:
         
         # 3秒後にゲーム画面へ遷移
         if turn_decided and pygame.time.get_ticks() - turn_announcement_timer > 3000:
-            print("[DEBUG] 先行後攻決定完了 → ゲーム画面へ遷移")
-            state = "game"
+            print("[DEBUG] 先行後攻決定完了 → 3x3ゲーム開始")
+            
+            # 選択された難易度が3x3の場合のみthreexthree.pyを呼び出し
+            if difficulty == "3x3":
+                # 相手にゲーム開始メッセージを送信
+                network.send("GAME_START")
+                print("[DEBUG] 相手にGAME_STARTメッセージを送信")
+                
+                # プレイヤー情報を準備
+                my_info = (username, pulldown_icon[selected_icon_index], pulldown_title[selected_title_index])
+                opponent_info = (opponent_username, pulldown_icon[opponent_icon_index], pulldown_title[opponent_title_index])
+                
+                # threexthree.pyのゲームを初期化して開始
+                threexthree.init_game(my_info, opponent_info, my_turn, network)
+                
+                # メインループを終了してthreexthree.pyのメインループに移行
+                running = False
+                # threexthree.pyのメインループを実行
+                threexthree.main()
+                # threexthree.pyが終了したらプログラム全体を終了
+                pygame.quit()
+                sys.exit()
+            else:
+                # 他の難易度の場合は従来通り
+                state = "game"
 
     # バックスペース長押し処理（IP入力画面）
     if state == "ip_input" and backspace_pressed:
@@ -879,25 +955,15 @@ while running:
                 draw_button(back_button_rect, "← 戻る", font_common, DARK_GRAY, WHITE)
 
     elif state == "waiting_for_host_rule":
-            # まだ送ってなければ
+        # まだ送ってなければ
         if not hasattr(network, "info_sent"):
             info_message = f"INFO:{username}:{selected_icon_index}:{selected_title_index}"
             network.send(info_message)
             print("[DEBUG] クライアント → INFOメッセージ送信:", info_message)
             network.info_sent = True
 
-        # --- INFO 受信チェックを先に ---
-        msg = network.receive()
-        if msg and msg.startswith("INFO:"):
-            _, name, icon_idx, title_idx = msg.split(":")
-            opponent_username = name
-            opponent_icon_index = int(icon_idx)
-            opponent_title_index = int(title_idx)
-            print(f"[DEBUG] クライアントがINFOを受信: {name}, {icon_idx}, {title_idx}")
-
-            # ★ ここで遷移！
-            state = "preparation"
-            print("[DEBUG] クライアント側: preparation に遷移")
+        # メッセージ受信処理はメインのprocess_network_messages()関数で処理される
+        print(f"[DEBUG] waiting_for_host_rule状態: opponent_username={opponent_username}, difficulty={difficulty}")
 
         # --- 画面描画 ---
         text = font_common.render("ホストの難易度選択を待機中...", True, YELLOW)
