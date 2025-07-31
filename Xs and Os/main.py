@@ -5,7 +5,7 @@ import sys
 from tkinter import ttk
 from network import Network # network.pyは別途用意済みと仮定
 import threexthree  # 3x3ゲームモジュールをインポート
-
+import fivexfive
 import math  # ←★これ追加！
 import random
 
@@ -153,6 +153,18 @@ def process_network_messages():
                 # threexthree.pyが終了したらプログラム全体を終了
                 pygame.quit()
                 sys.exit()
+                
+        elif difficulty == "5x5":
+            network.send("GAME_START")
+            my_info = (username, pulldown_icon[selected_icon_index], pulldown_title[selected_title_index])
+            opponent_info = (opponent_username, pulldown_icon[opponent_icon_index], pulldown_title[opponent_title_index])
+
+            fivexfive.init_game(my_info, opponent_info, my_turn, network)
+            running = False
+            fivexfive.main()
+            pygame.quit()
+            sys.exit()
+            
 
 # 準備確認用
 my_ready = False
@@ -425,11 +437,22 @@ while running:
                     role = "server"
                     ip_address = network.get_my_ip()
                     state = "ip_display"
+                    # サーバー関連フラグをリセット
+                    server_ready = False
+                    server_button_pressed = False
+                    # ネットワーク接続をリセット
+                    if network.connected:
+                        network.disconnect()
                 elif room_join_button.collidepoint(event.pos):
                     role = "client"
                     input_text = ""
                     cursor_pos = 0
                     state = "ip_input"
+                    # クライアント関連フラグをリセット
+                    client_ready = False
+                    # ネットワーク接続をリセット
+                    if network.connected:
+                        network.disconnect()
 
             
             elif state == "select_difficulty":
@@ -683,6 +706,29 @@ while running:
             else:
                 # 他の難易度の場合は従来通り
                 state = "game"
+                
+            if difficulty == "5x5":
+                # 相手にゲーム開始メッセージを送信
+                network.send("GAME_START")
+                print("[DEBUG] 相手にGAME_STARTメッセージを送信")
+                
+                # プレイヤー情報を準備
+                my_info = (username, pulldown_icon[selected_icon_index], pulldown_title[selected_title_index])
+                opponent_info = (opponent_username, pulldown_icon[opponent_icon_index], pulldown_title[opponent_title_index])
+                
+                # threexthree.pyのゲームを初期化して開始
+                fivexfive.init_game(my_info, opponent_info, my_turn, network)
+                
+                # メインループを終了してthreexthree.pyのメインループに移行
+                running = False
+                # threexthree.pyのメインループを実行
+                fivexfive.main()
+                # threexthree.pyが終了したらプログラム全体を終了
+                pygame.quit()
+                sys.exit()
+            else:
+                # 他の難易度の場合は従来通り
+                state = "game"
 
     # バックスペース長押し処理（IP入力画面）
     if state == "ip_input" and backspace_pressed:
@@ -699,7 +745,7 @@ while running:
     elif role == "client" and state == "waiting" and client_ready and network.connected:
         both_connected = True
 
-    if role == "server" and state == "ip_display" and getattr(network, "server_waiting", False):
+    if role == "server" and state == "ip_display" and getattr(network, "server_waiting", False) and server_button_pressed:
         server_ready = True
 
 
@@ -707,7 +753,7 @@ while running:
         client_ready = True
 
     if state in ["ip_display", "waiting", "ip_input"]:
-        if role == "server" and server_ready:
+        if role == "server" and server_ready and network.connected:
             print("[DEBUG] サーバー接続完了 → ユーザー名入力画面へ")
             state = "username"
         elif role == "client" and client_ready:
