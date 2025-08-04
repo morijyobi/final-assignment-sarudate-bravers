@@ -66,6 +66,20 @@ font_title = pygame.font.SysFont("meiryo", 48)
 font_subtitle = pygame.font.SysFont("meiryo", 24)
 font_button = pygame.font.SysFont("meiryo", 36)
 font_common = pygame.font.SysFont("meiryo", 28)
+# 絵文字専用フォントを追加（複数フォントでフォールバック）
+font_emoji = None
+emoji_fonts = ["segoeuiemoji", "notocoloremoji", "twemoji", "applesymbol", "applecoloremoji"]
+for font_name in emoji_fonts:
+    try:
+        font_emoji = pygame.font.SysFont(font_name, 48)
+        print(f"[DEBUG] 絵文字フォント '{font_name}' を使用します")
+        break
+    except:
+        continue
+
+if font_emoji is None:
+    print("[DEBUG] 絵文字フォントが見つかりません。通常フォントを使用します")
+    font_emoji = font_common
 
 RED = (200, 30, 30)
 WHITE = (255, 255, 255)
@@ -185,7 +199,7 @@ effect_timer = 0
 effect_type = None  # "spark", "thunder", "fire"
 shake_offset = [0, 0]
 
-pulldown_icon = ["➀", "➁", "➂", "➃", " "]
+pulldown_icon = ["😎", "😊", "🐱", "🐶", "🍀", "🌸", "😃"]
 pulldown_title = ["第98代唯一皇帝", "第11皇子", "修羅" ,"失楽園"]
 
 icon_dropdown_open = False
@@ -362,7 +376,7 @@ while running:
                     title_dropdown_open = False  # 称号が開いていたら閉じる
                 elif icon_dropdown_open:
                     for i in range(len(pulldown_icon)):
-                        item_rect = pygame.Rect(icon_box.x, icon_box.y + 40 * (i + 1), icon_box.width, 40)
+                        item_rect = pygame.Rect(icon_box.x, icon_box.y + 50 * (i + 1), icon_box.width, 50)  # 高さを50に変更
                         if item_rect.collidepoint(event.pos):
                             selected_icon_index = i
                             icon_dropdown_open = False
@@ -374,7 +388,7 @@ while running:
                     icon_dropdown_open = False  # アイコンが開いていたら閉じる
                 elif title_dropdown_open:
                     for i in range(len(pulldown_title)):
-                        item_rect = pygame.Rect(title_box.x, title_box.y + 40 * (i + 1), title_box.width, 40)
+                        item_rect = pygame.Rect(title_box.x, title_box.y + 50 * (i + 1), title_box.width, 50)  # 高さを50に変更
                         if item_rect.collidepoint(event.pos):
                             selected_title_index = i
                             title_dropdown_open = False
@@ -852,8 +866,9 @@ while running:
         draw_button(back_button_rect, "← 戻る", font_common, DARK_GRAY, WHITE)
         
         # ▼ アイコン・称号プルダウンメニュー ▼
-        icon_box = pygame.Rect(screen_width // 2 - 150, input_y + 80, 120, 40)
-        title_box = pygame.Rect(screen_width // 2 + 30, input_y + 80, 220, 40)
+        # アイコンボックスを絵文字用に大きく調整
+        icon_box = pygame.Rect(screen_width // 2 - 180, input_y + 80, 160, 50)  # 幅120→160、高さ40→50に拡大
+        title_box = pygame.Rect(screen_width // 2 + 30, input_y + 80, 220, 50)  # 高さを50に統一
 
         # ボックス背景と枠線
         pygame.draw.rect(screen, DARK_GRAY, icon_box, border_radius=8)
@@ -862,31 +877,39 @@ while running:
         pygame.draw.rect(screen, WHITE, title_box, 2, border_radius=8)
 
         # 現在の選択肢表示
-        icon_label = font_common.render(pulldown_icon[selected_icon_index], True, WHITE)
-        screen.blit(icon_label, (icon_box.centerx - icon_label.get_width() // 2, icon_box.y + 5))
+        try:
+            # アイコンボックス用に少し小さめの絵文字フォントを使用
+            icon_font_small = pygame.font.SysFont("segoeuiemoji", 32)  # 48→32に縮小
+            icon_label = icon_font_small.render(pulldown_icon[selected_icon_index], True, YELLOW)
+        except:
+            icon_label = font_common.render(pulldown_icon[selected_icon_index], True, WHITE)
+        screen.blit(icon_label, (icon_box.centerx - icon_label.get_width() // 2, icon_box.y + (icon_box.height - icon_label.get_height()) // 2))
         title_label = font_common.render(pulldown_title[selected_title_index], True, WHITE)
-        screen.blit(title_label, (title_box.centerx - title_label.get_width() // 2, title_box.y + 5))
+        screen.blit(title_label, (title_box.centerx - title_label.get_width() // 2, title_box.y + (title_box.height - title_label.get_height()) // 2))
 
         # ドロップダウンリスト展開（アイコン）
         if icon_dropdown_open:
             for i, item in enumerate(pulldown_icon):
-                item_rect = pygame.Rect(icon_box.x, icon_box.y + 40 * (i + 1), icon_box.width, 40)
+                item_rect = pygame.Rect(icon_box.x, icon_box.y + 50 * (i + 1), icon_box.width, 50)  # 高さ40→50に拡大
                 bg_color = (70, 130, 200) if i == selected_icon_index else DARK_GRAY  # 選択中なら青背景
                 pygame.draw.rect(screen, bg_color, item_rect, border_radius=8)
                 pygame.draw.rect(screen, WHITE, item_rect, 1, border_radius=8)
-                item_label = font_common.render(item, True, WHITE)
-                screen.blit(item_label, (item_rect.centerx - item_label.get_width() // 2, item_rect.y + 5))
+                try:
+                    item_label = icon_font_small.render(item, True, YELLOW)
+                except:
+                    item_label = font_common.render(item, True, WHITE)
+                screen.blit(item_label, (item_rect.centerx - item_label.get_width() // 2, item_rect.y + (item_rect.height - item_label.get_height()) // 2))
 
 
         # ドロップダウンリスト展開（称号）
         if title_dropdown_open:
             for i, item in enumerate(pulldown_title):
-                item_rect = pygame.Rect(title_box.x, title_box.y + 40 * (i + 1), title_box.width, 40)
+                item_rect = pygame.Rect(title_box.x, title_box.y + 50 * (i + 1), title_box.width, 50)  # 高さを50に統一
                 bg_color = (70, 130, 200) if i == selected_title_index else DARK_GRAY  # 選択中なら青背景
                 pygame.draw.rect(screen, bg_color, item_rect, border_radius=8)
                 pygame.draw.rect(screen, WHITE, item_rect, 1, border_radius=8)
                 item_label = font_common.render(item, True, WHITE)
-                screen.blit(item_label, (item_rect.centerx - item_label.get_width() // 2, item_rect.y + 5))
+                screen.blit(item_label, (item_rect.centerx - item_label.get_width() // 2, item_rect.y + (item_rect.height - item_label.get_height()) // 2))
 
 
     elif state == "select_difficulty":
@@ -941,7 +964,12 @@ while running:
                     screen.blit(name_surface, (left_x - name_surface.get_width() // 2, y_base))
                     
                 screen.blit(name_surface, (left_x - name_surface.get_width() // 2, y_base))
-                icon_surface = font_common.render(pulldown_icon[selected_icon_index], True, WHITE)
+                try:
+                    # 準備画面でも小さめの絵文字フォントを使用
+                    icon_font_small = pygame.font.SysFont("segoeuiemoji", 32)
+                    icon_surface = icon_font_small.render(pulldown_icon[selected_icon_index], True, YELLOW)
+                except:
+                    icon_surface = font_common.render(pulldown_icon[selected_icon_index], True, WHITE)
                 screen.blit(icon_surface, (left_x - icon_surface.get_width() // 2, y_base + 40))
                 title_surface = font_common.render(pulldown_title[selected_title_index], True, WHITE)
                 screen.blit(title_surface, (left_x - title_surface.get_width() // 2, y_base + 80))
@@ -960,7 +988,11 @@ while running:
                 opp_title = pulldown_title[opponent_title_index] if opponent_title_index is not None else "???"
                 opp_name_surface = font_common.render(opp_name, True, WHITE)
                 screen.blit(opp_name_surface, (right_x - opp_name_surface.get_width() // 2, y_base))
-                opp_icon_surface = font_common.render(opp_icon, True, WHITE)
+                try:
+                    # 相手のアイコンも小さめのフォントを使用
+                    opp_icon_surface = icon_font_small.render(opp_icon, True, YELLOW)
+                except:
+                    opp_icon_surface = font_common.render(opp_icon, True, WHITE)
                 screen.blit(opp_icon_surface, (right_x - opp_icon_surface.get_width() // 2, y_base + 40))
                 opp_title_surface = font_common.render(opp_title, True, WHITE)
                 screen.blit(opp_title_surface, (right_x - opp_title_surface.get_width() // 2, y_base + 80))
