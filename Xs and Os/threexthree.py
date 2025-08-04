@@ -183,37 +183,74 @@ def draw_board():
 
 def draw_player_info():
     """プレイヤー情報を描画する"""
+    # 絵文字用の大きなフォントを作成（複数フォントでフォールバック）
+    font_emoji = None
+    emoji_fonts = ["segoeuiemoji", "notocoloremoji", "twemoji", "applesymbol", "applecoloremoji"]
+    for font_name in emoji_fonts:
+        try:
+            font_emoji = pygame.font.SysFont(font_name, 64)
+            break
+        except:
+            continue
+    
+    if font_emoji is None:
+        font_emoji = font_common  # フォールバック
+    
     # 自分の情報（画面左下）
     my_info_x = 20
-    my_info_y = screen_height - 150
+    my_info_y = screen_height - 180  # アイコンが大きくなるので少し上に移動
     my_name_text = font_common.render(f"名前: {my_name}", True, WHITE)
-    my_icon_text = font_common.render(f"アイコン: {my_icon}", True, WHITE)
     my_title_text = font_common.render(f"称号: {my_title}", True, WHITE)
+    
+    # アイコンを大きく表示
+    try:
+        my_icon_text = font_emoji.render(my_icon, True, YELLOW)
+        icon_rect = my_icon_text.get_rect()
+        icon_rect.x = my_info_x
+        icon_rect.y = my_info_y + 30
+    except:
+        # 絵文字フォントが使えない場合は通常フォントを使用
+        my_icon_text = font_common.render(f"アイコン: {my_icon}", True, WHITE)
+        icon_rect = my_icon_text.get_rect()
+        icon_rect.x = my_info_x
+        icon_rect.y = my_info_y + 30
     
     # 自分の持ち時間（色分け：時間が少ないと赤色）
     my_time_color = RED if my_time_left < 60 else (YELLOW if my_time_left < 120 else WHITE)
     my_time_text = font_common.render(f"持ち時間: {format_time(my_time_left)}", True, my_time_color)
     
     screen.blit(my_name_text, (my_info_x, my_info_y))
-    screen.blit(my_icon_text, (my_info_x, my_info_y + 30))
-    screen.blit(my_title_text, (my_info_x, my_info_y + 60))
-    screen.blit(my_time_text, (my_info_x, my_info_y + 90))
+    screen.blit(my_icon_text, icon_rect)
+    screen.blit(my_title_text, (my_info_x, my_info_y + 100))  # アイコンが大きくなった分下に移動
+    screen.blit(my_time_text, (my_info_x, my_info_y + 130))
     
     # 対戦相手の情報（画面右上）
     opponent_info_x = screen_width - 300
     opponent_info_y = 20
     opp_name_text = font_common.render(f"名前: {opponent_name}", True, WHITE)
-    opp_icon_text = font_common.render(f"アイコン: {opponent_icon}", True, WHITE)
     opp_title_text = font_common.render(f"称号: {opponent_title}", True, WHITE)
+    
+    # 相手のアイコンを大きく表示
+    try:
+        opp_icon_text = font_emoji.render(opponent_icon, True, YELLOW)
+        opp_icon_rect = opp_icon_text.get_rect()
+        opp_icon_rect.x = opponent_info_x
+        opp_icon_rect.y = opponent_info_y + 30
+    except:
+        # 絵文字フォントが使えない場合は通常フォントを使用
+        opp_icon_text = font_common.render(f"アイコン: {opponent_icon}", True, WHITE)
+        opp_icon_rect = opp_icon_text.get_rect()
+        opp_icon_rect.x = opponent_info_x
+        opp_icon_rect.y = opponent_info_y + 30
     
     # 相手の持ち時間（色分け：時間が少ないと赤色）
     opp_time_color = RED if opponent_time_left < 60 else (YELLOW if opponent_time_left < 120 else WHITE)
     opp_time_text = font_common.render(f"持ち時間: {format_time(opponent_time_left)}", True, opp_time_color)
     
     screen.blit(opp_name_text, (opponent_info_x, opponent_info_y))
-    screen.blit(opp_icon_text, (opponent_info_x, opponent_info_y + 30))
-    screen.blit(opp_title_text, (opponent_info_x, opponent_info_y + 60))
-    screen.blit(opp_time_text, (opponent_info_x, opponent_info_y + 90))
+    screen.blit(opp_icon_text, opp_icon_rect)
+    screen.blit(opp_title_text, (opponent_info_x, opponent_info_y + 100))  # アイコンが大きくなった分下に移動
+    screen.blit(opp_time_text, (opponent_info_x, opponent_info_y + 130))
 
 def draw_game_status():
     """ゲーム状態を描画する"""
